@@ -2,10 +2,11 @@
 Title: FeatureSpace advanced use cases
 Author: [Dimitre Oliveira](https://www.linkedin.com/in/dimitre-oliveira-7a1a0113a/)
 Date created: 2023/07/01
-Last modified: 2023/07/01
+Last modified: 2025/01/03
 Description: How to use FeatureSpace for advanced preprocessing use cases.
 Accelerator: None
 """
+
 """
 ## Introduction
 
@@ -14,7 +15,7 @@ This example is an extension of the
 code example, and here we will extend it to cover more complex use
 cases of the [`keras.utils.FeatureSpace`](https://keras.io/api/utils/feature_space/)
 preprocessing utility, like feature hashing, feature crosses, handling missing values and
-integrating [Keras preprocessing layers](https://keras.io/guides/preprocessing_layers/)
+integrating [Keras preprocessing layers](https://keras.io/api/layers/preprocessing_layers/)
 with FeatureSpace.
 
 The general task still is structured data classification (also known as tabular data
@@ -70,11 +71,16 @@ is to have a realistic predictive model. For this reason we will drop it.
 ## Setup
 """
 
+import os
+
+os.environ["KERAS_BACKEND"] = "tensorflow"
+
+import keras
+from keras.utils import FeatureSpace
 import pandas as pd
 import tensorflow as tf
 from pathlib import Path
 from zipfile import ZipFile
-from tensorflow.keras.utils import FeatureSpace
 
 """
 ## Load the data
@@ -83,8 +89,8 @@ Let's download the data and load it into a Pandas dataframe:
 """
 
 data_url = "https://archive.ics.uci.edu/static/public/222/bank+marketing.zip"
-data_zipped_path = tf.keras.utils.get_file("bank_marketing.zip", data_url, extract=True)
-keras_datasets_path = Path(data_zipped_path).parents[0]
+data_zipped_path = keras.utils.get_file("bank_marketing.zip", data_url, extract=True)
+keras_datasets_path = Path(data_zipped_path)
 with ZipFile(f"{keras_datasets_path}/bank-additional.zip", "r") as zip:
     # Extract files
     zip.extractall(path=keras_datasets_path)
@@ -113,7 +119,7 @@ target label), here's a preview of a few samples:
 """
 
 print(f"Dataframe shape: {dataframe.shape}")
-display(dataframe.head())
+print(dataframe.head())
 
 """
 The column, "y", indicates whether the client has subscribed a term deposit or not.
@@ -144,7 +150,7 @@ an integer to be able to train our model with it. To achieve this we will create
 respectively.
 """
 
-label_lookup = tf.keras.layers.StringLookup(
+label_lookup = keras.layers.StringLookup(
     # the order here is important since the first index will be encoded as 0
     vocabulary=["no", "yes"],
     num_oov_indices=0,
@@ -357,18 +363,18 @@ example_feature_space(train_ds_with_no_labels, feature_space, ["age", "job"])
 To be a really flexible and extensible feature we cannot only rely on those pre-defined
 transformation, we must be able to re-use other transformations from the Keras/TensorFlow
 ecosystem and customize our own, this is why `FeatureSpace` is also designed to work with
-[Keras preprocessing layers](https://keras.io/guides/preprocessing_layers/), this way we
+[Keras preprocessing layers](https://keras.io/api/layers/preprocessing_layers/), this way we
 can use sophisticated data transformations provided by the framework, you can even create
 your own custom Keras preprocessing layers and use it in the same way.
 
 Here we are going to use the
-[`tf.keras.layers.TextVectorization`](https://keras.io/api/layers/preprocessing_layers/text/text_vectorization/#textvectorization-class)
+[`keras.layers.TextVectorization`](https://keras.io/api/layers/preprocessing_layers/text/text_vectorization/#textvectorization-class)
 preprocessing layer to create a TF-IDF
 feature from our data. Note that this feature is not a really good use case for TF-IDF,
 this is just for demonstration purposes.
 """
 
-custom_layer = tf.keras.layers.TextVectorization(output_mode="tf_idf")
+custom_layer = keras.layers.TextVectorization(output_mode="tf_idf")
 
 feature_space = FeatureSpace(
     features={
@@ -425,9 +431,7 @@ feature_space = FeatureSpace(
     # Specify feature cross with a custom crossing dim.
     crosses=[
         FeatureSpace.cross(feature_names=("age", "job"), crossing_dim=8),
-        FeatureSpace.cross(
-            feature_names=("default", "housing", "loan"), crossing_dim=6
-        ),
+        FeatureSpace.cross(feature_names=("housing", "loan"), crossing_dim=6),
         FeatureSpace.cross(
             feature_names=("poutcome", "previously_contacted"), crossing_dim=2
         ),
@@ -519,11 +523,11 @@ This model is quite trivial only for demonstration purposes so don't pay too muc
 attention to the architecture.
 """
 
-x = tf.keras.layers.Dense(64, activation="relu")(encoded_features)
-x = tf.keras.layers.Dropout(0.5)(x)
-output = tf.keras.layers.Dense(1, activation="sigmoid")(x)
+x = keras.layers.Dense(64, activation="relu")(encoded_features)
+x = keras.layers.Dropout(0.5)(x)
+output = keras.layers.Dense(1, activation="sigmoid")(x)
 
-model = tf.keras.Model(inputs=encoded_features, outputs=output)
+model = keras.Model(inputs=encoded_features, outputs=output)
 model.compile(optimizer="adam", loss="binary_crossentropy", metrics=["accuracy"])
 
 """
@@ -534,7 +538,7 @@ of the tf.data pipeline, not as part of the model.
 """
 
 model.fit(
-    preprocessed_train_ds, validation_data=preprocessed_valid_ds, epochs=20, verbose=2
+    preprocessed_train_ds, validation_data=preprocessed_valid_ds, epochs=10, verbose=2
 )
 
 """
@@ -552,7 +556,7 @@ handy if you train a model but want to do inference at different time, possibly 
 different device or environment.
 """
 
-loaded_feature_space = tf.keras.models.load_model("myfeaturespace.keras")
+loaded_feature_space = keras.saving.load_model("myfeaturespace.keras")
 
 """
 ### Building the inference end-to-end model
@@ -568,7 +572,7 @@ print(encoded_features)
 print(dict_inputs)
 
 outputs = model(encoded_features)
-inference_model = tf.keras.Model(inputs=dict_inputs, outputs=outputs)
+inference_model = keras.Model(inputs=dict_inputs, outputs=outputs)
 
 sample = {
     "age": 30,
@@ -593,7 +597,9 @@ sample = {
     "previously_contacted": 0,
 }
 
-input_dict = {name: tf.convert_to_tensor([value]) for name, value in sample.items()}
+input_dict = {
+    name: keras.ops.convert_to_tensor([value]) for name, value in sample.items()
+}
 predictions = inference_model.predict(input_dict)
 
 print(

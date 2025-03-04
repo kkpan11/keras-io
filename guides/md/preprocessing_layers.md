@@ -6,7 +6,7 @@
 **Description:** Overview of how to leverage preprocessing layers to create end-to-end models.
 
 
-<img class="k-inline-icon" src="https://colab.research.google.com/img/colab_favicon.ico"/> [**View in Colab**](https://colab.research.google.com/github/keras-team/keras-io/blob/master/guides/ipynb/preprocessing_layers.ipynb)  <span class="k-dot">•</span><img class="k-inline-icon" src="https://github.com/favicon.ico"/> [**GitHub source**](https://github.com/keras-team/keras-io/blob/master/guides/preprocessing_layers.py)
+<img class="k-inline-icon" src="https://colab.research.google.com/img/colab_favicon.ico"/> [**View in Colab**](https://colab.research.google.com/github/keras-team/keras-io/blob/master/guides/ipynb/preprocessing_layers.ipynb)  <span class="k-dot">•</span><img class="k-inline-icon" src="https://github.com/favicon.ico"/> [**GitHub source**](https://github.com/keras-team/keras-io/blob/master/guides/_preprocessing_layers.py)
 
 
 
@@ -736,11 +736,3 @@ Instead, pre-compute your vocabulary in advance
 (you could use Apache Beam or TF Transform for this)
 and store it in a file. Then load the vocabulary into the layer at construction
 time by passing the file path as the `vocabulary` argument.
-
-
-### Using lookup layers on a TPU pod or with `ParameterServerStrategy`.
-
-There is an outstanding issue that causes performance to degrade when using
-a `TextVectorization`, `StringLookup`, or `IntegerLookup` layer while
-training on a TPU pod or on multiple machines via `ParameterServerStrategy`.
-This is slated to be fixed in TensorFlow 2.7.

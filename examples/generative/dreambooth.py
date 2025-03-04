@@ -6,6 +6,7 @@ Last modified: 2023/02/05
 Description: Implementing DreamBooth.
 Accelerator: GPU
 """
+
 """
 ## Introduction
 
@@ -633,7 +634,7 @@ images_dreamboothed = dreambooth_model.text_to_image(
 plot_images(images_dreamboothed, prompt)
 
 """
-Feel free to experiment with different prompts (don't forget to add the unique identifer
+Feel free to experiment with different prompts (don't forget to add the unique identifier
 and the class label!) to see how the results change. We welcome you to check out our
 codebase and more experimental results
 [here](https://github.com/sayakpaul/dreambooth-keras#results). You can also read

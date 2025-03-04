@@ -6,7 +6,7 @@
 **Description:** Complete guide to using & customizing RNN layers.
 
 
-<img class="k-inline-icon" src="https://colab.research.google.com/img/colab_favicon.ico"/> [**View in Colab**](https://colab.research.google.com/github/keras-team/keras-io/blob/master/guides/ipynb/working_with_rnns.ipynb)  <span class="k-dot">•</span><img class="k-inline-icon" src="https://github.com/favicon.ico"/> [**GitHub source**](https://github.com/keras-team/keras-io/blob/master/guides/working_with_rnns.py)
+<img class="k-inline-icon" src="https://colab.research.google.com/img/colab_favicon.ico"/> [**View in Colab**](https://colab.research.google.com/github/keras-team/keras-io/blob/master/guides/ipynb/working_with_rnns.ipynb)  <span class="k-dot">•</span><img class="k-inline-icon" src="https://github.com/favicon.ico"/> [**GitHub source**](https://github.com/keras-team/keras-io/blob/master/guides/_working_with_rnns.py)
 
 
 
@@ -655,7 +655,7 @@ class NestedCell(keras.layers.Layer):
         return output, new_states
 
     def get_config(self):
-        return {"unit_1": self.unit_1, "unit_2": unit_2, "unit_3": self.unit_3}
+        return {"unit_1": self.unit_1, "unit_2": self.unit_2, "unit_3": self.unit_3}
 
 ```
 

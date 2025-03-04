@@ -2,10 +2,12 @@
 Title: End-to-end Masked Language Modeling with BERT
 Author: [Ankur Singh](https://twitter.com/ankur310794)
 Date created: 2020/09/18
-Last modified: 2020/09/18
+Last modified: 2024/03/15
 Description: Implement a Masked Language Model (MLM) with BERT and fine-tune it on the IMDB Reviews dataset.
 Accelerator: GPU
+Converted to Keras 3 by: [Sitam Meur](https://github.com/sitamgithub-MSIT) and made backend-agnostic by: [Humbulani Ndou](https://github.com/Humbulani1234)
 """
+
 """
 ## Introduction
 
@@ -42,10 +44,16 @@ Note: This example should be run with `tf-nightly`.
 Install `tf-nightly` via `pip install tf-nightly`.
 """
 
-import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-from tensorflow.keras.layers import TextVectorization
+import os
+
+os.environ["KERAS_BACKEND"] = "torch"  # or jax, or tensorflow
+
+import keras_hub
+
+import keras
+from keras import layers
+from keras.layers import TextVectorization
+
 from dataclasses import dataclass
 import pandas as pd
 import numpy as np
@@ -111,7 +119,7 @@ def get_data_from_text_files(folder_name):
 train_df = get_data_from_text_files("train")
 test_df = get_data_from_text_files("test")
 
-all_data = train_df.append(test_df)
+all_data = pd.concat([train_df, test_df], ignore_index=True)
 
 """
 ## Dataset preparation
@@ -129,6 +137,9 @@ Below, we define 3 preprocessing functions.
 It masks 15% of all input tokens in each sequence at random.
 """
 
+# For data pre-processing and tf.data.Dataset
+import tensorflow as tf
+
 
 def custom_standardization(input_data):
     lowercase = tf.strings.lower(input_data)
@@ -144,7 +155,7 @@ def get_vectorize_layer(texts, vocab_size, max_seq, special_tokens=["[MASK]"]):
     Args:
       texts (list): List of string i.e input texts
       vocab_size (int): vocab size
-      max_seq (int): Maximum sequence lenght.
+      max_seq (int): Maximum sequence length.
       special_tokens (list, optional): List of special tokens. Defaults to ['[MASK]'].
 
     Returns:
@@ -196,9 +207,9 @@ def get_masked_input_and_labels(encoded_texts):
     # Set input to [MASK] which is the last token for the 90% of tokens
     # This means leaving 10% unchanged
     inp_mask_2mask = inp_mask & (np.random.rand(*encoded_texts.shape) < 0.90)
-    encoded_texts_masked[
-        inp_mask_2mask
-    ] = mask_token_id  # mask token is the last in the dict
+    encoded_texts_masked[inp_mask_2mask] = (
+        mask_token_id  # mask token is the last in the dict
+    )
 
     # Set 10% to a random token
     inp_mask_2random = inp_mask_2mask & (np.random.rand(*encoded_texts.shape) < 1 / 9)
@@ -232,10 +243,8 @@ test_classifier_ds = tf.data.Dataset.from_tensor_slices((x_test, y_test)).batch(
     config.BATCH_SIZE
 )
 
-# Build dataset for end to end model input (will be used at the end)
-test_raw_classifier_ds = tf.data.Dataset.from_tensor_slices(
-    (test_df.review.values, y_test)
-).batch(config.BATCH_SIZE)
+# Dataset for end to end model input (will be used at the end)
+test_raw_classifier_ds = test_df
 
 # Prepare data for masked language model
 x_all_review = encode(all_data.review.values)
@@ -263,13 +272,13 @@ def bert_module(query, key, value, i):
     attention_output = layers.MultiHeadAttention(
         num_heads=config.NUM_HEAD,
         key_dim=config.EMBED_DIM // config.NUM_HEAD,
-        name="encoder_{}/multiheadattention".format(i),
+        name="encoder_{}_multiheadattention".format(i),
     )(query, key, value)
-    attention_output = layers.Dropout(0.1, name="encoder_{}/att_dropout".format(i))(
+    attention_output = layers.Dropout(0.1, name="encoder_{}_att_dropout".format(i))(
         attention_output
     )
     attention_output = layers.LayerNormalization(
-        epsilon=1e-6, name="encoder_{}/att_layernormalization".format(i)
+        epsilon=1e-6, name="encoder_{}_att_layernormalization".format(i)
     )(query + attention_output)
 
     # Feed-forward layer
@@ -278,59 +287,31 @@ def bert_module(query, key, value, i):
             layers.Dense(config.FF_DIM, activation="relu"),
             layers.Dense(config.EMBED_DIM),
         ],
-        name="encoder_{}/ffn".format(i),
+        name="encoder_{}_ffn".format(i),
     )
     ffn_output = ffn(attention_output)
-    ffn_output = layers.Dropout(0.1, name="encoder_{}/ffn_dropout".format(i))(
+    ffn_output = layers.Dropout(0.1, name="encoder_{}_ffn_dropout".format(i))(
         ffn_output
     )
     sequence_output = layers.LayerNormalization(
-        epsilon=1e-6, name="encoder_{}/ffn_layernormalization".format(i)
+        epsilon=1e-6, name="encoder_{}_ffn_layernormalization".format(i)
     )(attention_output + ffn_output)
     return sequence_output
 
 
-def get_pos_encoding_matrix(max_len, d_emb):
-    pos_enc = np.array(
-        [
-            [pos / np.power(10000, 2 * (j // 2) / d_emb) for j in range(d_emb)]
-            if pos != 0
-            else np.zeros(d_emb)
-            for pos in range(max_len)
-        ]
-    )
-    pos_enc[1:, 0::2] = np.sin(pos_enc[1:, 0::2])  # dim 2i
-    pos_enc[1:, 1::2] = np.cos(pos_enc[1:, 1::2])  # dim 2i+1
-    return pos_enc
+loss_fn = keras.losses.SparseCategoricalCrossentropy(reduction=None)
+loss_tracker = keras.metrics.Mean(name="loss")
 
 
-loss_fn = keras.losses.SparseCategoricalCrossentropy(
-    reduction=tf.keras.losses.Reduction.NONE
-)
-loss_tracker = tf.keras.metrics.Mean(name="loss")
+class MaskedLanguageModel(keras.Model):
 
+    def compute_loss(self, x=None, y=None, y_pred=None, sample_weight=None):
 
-class MaskedLanguageModel(tf.keras.Model):
-    def train_step(self, inputs):
-        if len(inputs) == 3:
-            features, labels, sample_weight = inputs
-        else:
-            features, labels = inputs
-            sample_weight = None
-
-        with tf.GradientTape() as tape:
-            predictions = self(features, training=True)
-            loss = loss_fn(labels, predictions, sample_weight=sample_weight)
-
-        # Compute gradients
-        trainable_vars = self.trainable_variables
-        gradients = tape.gradient(loss, trainable_vars)
-
-        # Update weights
-        self.optimizer.apply_gradients(zip(gradients, trainable_vars))
-
-        # Compute our own metrics
+        loss = loss_fn(y, y_pred, sample_weight)
         loss_tracker.update_state(loss, sample_weight=sample_weight)
+        return keras.ops.sum(loss)
+
+    def compute_metrics(self, x, y, y_pred, sample_weight):
 
         # Return a dict mapping metric names to current value
         return {"loss": loss_tracker.result()}
@@ -346,17 +327,14 @@ class MaskedLanguageModel(tf.keras.Model):
 
 
 def create_masked_language_bert_model():
-    inputs = layers.Input((config.MAX_LEN,), dtype=tf.int64)
+    inputs = layers.Input((config.MAX_LEN,), dtype="int64")
 
     word_embeddings = layers.Embedding(
         config.VOCAB_SIZE, config.EMBED_DIM, name="word_embedding"
     )(inputs)
-    position_embeddings = layers.Embedding(
-        input_dim=config.MAX_LEN,
-        output_dim=config.EMBED_DIM,
-        weights=[get_pos_encoding_matrix(config.MAX_LEN, config.EMBED_DIM)],
-        name="position_embedding",
-    )(tf.range(start=0, limit=config.MAX_LEN, delta=1))
+    position_embeddings = keras_hub.layers.PositionEmbedding(
+        sequence_length=config.MAX_LEN
+    )(word_embeddings)
     embeddings = word_embeddings + position_embeddings
 
     encoder_output = embeddings
@@ -423,7 +401,7 @@ bert_masked_model.summary()
 """
 
 bert_masked_model.fit(mlm_ds, epochs=5, callbacks=[generator_callback])
-bert_masked_model.save("bert_mlm_imdb.h5")
+bert_masked_model.save("bert_mlm_imdb.keras")
 
 """
 ## Fine-tune a sentiment classification model
@@ -436,10 +414,10 @@ pretrained BERT features.
 
 # Load pretrained bert model
 mlm_model = keras.models.load_model(
-    "bert_mlm_imdb.h5", custom_objects={"MaskedLanguageModel": MaskedLanguageModel}
+    "bert_mlm_imdb.keras", custom_objects={"MaskedLanguageModel": MaskedLanguageModel}
 )
-pretrained_bert_model = tf.keras.Model(
-    mlm_model.input, mlm_model.get_layer("encoder_0/ffn_layernormalization").output
+pretrained_bert_model = keras.Model(
+    mlm_model.input, mlm_model.get_layer("encoder_0_ffn_layernormalization").output
 )
 
 # Freeze it
@@ -447,7 +425,7 @@ pretrained_bert_model.trainable = False
 
 
 def create_classifier_bert_model():
-    inputs = layers.Input((config.MAX_LEN,), dtype=tf.int64)
+    inputs = layers.Input((config.MAX_LEN,), dtype="int64")
     sequence_output = pretrained_bert_model(inputs)
     pooled_output = layers.GlobalMaxPooling1D()(sequence_output)
     hidden_layer = layers.Dense(64, activation="relu")(pooled_output)
@@ -488,16 +466,33 @@ classifer_model.fit(
 When you want to deploy a model, it's best if it already includes its preprocessing
 pipeline, so that you don't have to reimplement the preprocessing logic in your
 production environment. Let's create an end-to-end model that incorporates
-the `TextVectorization` layer, and let's evaluate. Our model will accept raw strings
-as input.
+the `TextVectorization` layer inside evaluate method, and let's evaluate. We will pass raw strings as input.
 """
 
 
+# We create a custom Model to override the evaluate method so
+# that it first pre-process text data
+class ModelEndtoEnd(keras.Model):
+
+    def evaluate(self, inputs):
+        features = encode(inputs.review.values)
+        labels = inputs.sentiment.values
+        test_classifier_ds = (
+            tf.data.Dataset.from_tensor_slices((features, labels))
+            .shuffle(1000)
+            .batch(config.BATCH_SIZE)
+        )
+        return super().evaluate(test_classifier_ds)
+
+    # Build the model
+    def build(self, input_shape):
+        self.built = True
+
+
 def get_end_to_end(model):
-    inputs_string = keras.Input(shape=(1,), dtype="string")
-    indices = vectorize_layer(inputs_string)
-    outputs = model(indices)
-    end_to_end_model = keras.Model(inputs_string, outputs, name="end_to_end_model")
+    inputs = classifer_model.inputs[0]
+    outputs = classifer_model.outputs
+    end_to_end_model = ModelEndtoEnd(inputs, outputs, name="end_to_end_model")
     optimizer = keras.optimizers.Adam(learning_rate=config.LR)
     end_to_end_model.compile(
         optimizer=optimizer, loss="binary_crossentropy", metrics=["accuracy"]
@@ -506,4 +501,5 @@ def get_end_to_end(model):
 
 
 end_to_end_classification_model = get_end_to_end(classifer_model)
+# Pass raw text dataframe to the model
 end_to_end_classification_model.evaluate(test_raw_classifier_ds)
